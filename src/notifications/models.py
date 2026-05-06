@@ -34,6 +34,7 @@ class RuleResult:
     summary: str
     risk_signals: list[str]
     actions: list[str]
+    urgent: bool = False
 
 
 @dataclass(frozen=True)
