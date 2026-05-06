@@ -36,6 +36,22 @@ def build_static_snapshot(slot: str) -> FlowSnapshot:
     )
 
 
+def build_snapshot_from_prices(slot: str, prices: dict[str, dict]) -> FlowSnapshot:
+    hour, minute = _slot_time(slot)
+    now = datetime.now(ZoneInfo("Asia/Seoul")).replace(hour=hour, minute=minute, second=0, microsecond=0)
+    assets = [
+        AssetSnapshot(
+            symbol=symbol,
+            name=symbol,
+            price=payload.get("price"),
+            change_pct=payload.get("change_pct"),
+            currency=payload.get("currency", "USD"),
+        )
+        for symbol, payload in prices.items()
+    ]
+    return FlowSnapshot(as_of=now.isoformat(), phase=slot, assets=assets)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Send AI Hedge Fund portfolio flow alert")
     parser.add_argument("--dry-run", action="store_true")
