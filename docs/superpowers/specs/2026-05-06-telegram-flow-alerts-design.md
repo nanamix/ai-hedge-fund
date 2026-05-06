@@ -42,17 +42,44 @@ Components:
 
 - `flow_check`: gathers current market and portfolio signals.
 - `rules_engine`: maps signals into user-safe labels such as `대기`, `보류`, `검토`, or `분할매수 후보`.
-- `telegram_notifier`: sends the message through Telegram Bot API.
+- `notifier`: sends the message through Hermes Agent when available, with direct Telegram Bot API as a fallback.
 - `state_store`: keeps a small local JSON snapshot of the previous run so alerts can mention changes since the prior summary.
 - `scheduler`: macOS `launchd` preferred, with cron as a fallback.
 
 Configuration:
 
+- Optional Hermes Agent endpoint or command configuration.
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
 - Optional watchlist and threshold settings
 
-Secrets must live in `.env` or the user's existing local secret workflow. They must not be committed.
+Secrets must live in `.env`, Hermes Agent configuration, or the user's existing local secret workflow. They must not be committed.
+
+## Notification Transport
+
+Preferred transport is Hermes Agent if it is already connected to Telegram in the user's environment. This keeps Telegram-specific credential handling out of the portfolio monitor and lets Hermes own delivery concerns.
+
+Transport order:
+
+1. Hermes Agent Telegram bridge.
+2. Direct Telegram Bot API fallback.
+3. Dry-run console output for local testing.
+
+The monitor should build one normalized alert payload and pass it to whichever transport is enabled. If Hermes is configured, the monitor should not require direct `TELEGRAM_BOT_TOKEN` or `TELEGRAM_CHAT_ID`.
+
+Hermes integration needs one of these concrete interfaces before implementation:
+
+- A local CLI command to send a message.
+- A local HTTP endpoint to post a message.
+- A file/dropbox style queue that Hermes watches.
+
+If more than one is available, prefer the simplest interface that can be manually tested from the terminal.
+
+Current status:
+
+- User has requested Hermes Agent integration.
+- Implementation is waiting on the concrete Hermes interface: CLI, HTTP endpoint, or file queue.
+- Until that interface is confirmed, keep direct Telegram Bot API as a fallback path only.
 
 ## Watchlist
 
@@ -79,7 +106,7 @@ The first implementation may support U.S. tickers before Korean ETF symbols if d
    - `보류`: model or price action is noisy or conflicting.
    - `검토`: worth reviewing, but no immediate order.
    - `분할매수 후보`: only if within target bands and not a chase.
-6. Notifier sends one concise Telegram message.
+6. Notifier sends one concise message through Hermes or Telegram fallback.
 7. State store records the snapshot for next comparison.
 
 ## Message Format
@@ -129,7 +156,8 @@ Risk thresholds for the first implementation can be conservative and configurabl
 
 ## Error Handling
 
-- Missing Telegram token or chat ID: exit with a clear error and do not retry.
+- Missing Hermes and Telegram configuration: exit with a clear error and do not retry.
+- Hermes delivery failure: use direct Telegram fallback if configured; otherwise fail visibly.
 - Price API failure: send a degraded alert only if Telegram config works, clearly saying data was unavailable.
 - Partial ticker failure: include only successful tickers and list missing symbols briefly.
 - Rate limits: back off and keep the message short; avoid repeated notification spam.
@@ -146,7 +174,8 @@ Unit tests:
 
 Manual verification:
 
-- Send a Telegram test message.
+- Send a Hermes-routed Telegram test message when Hermes configuration is present.
+- Send a direct Telegram test message only when fallback credentials are configured.
 - Run one dry-run alert without network price fetch.
 - Run one live alert with a small watchlist.
 - Confirm no secrets are printed or committed.
@@ -164,6 +193,8 @@ python -m src.notifications.telegram_flow_check
 
 The schedule file should be created only after manual Telegram delivery works.
 
+If Hermes Agent is used, the schedule file should be created only after a manual Hermes-to-Telegram delivery test works.
+
 ## Approval Status
 
 Design approved by the user with this cadence:
@@ -171,3 +202,5 @@ Design approved by the user with this cadence:
 - Use summary alerts, not hourly alerts.
 - Exclude 02:00 KST.
 - Proceed with the five daily KST checkpoints listed above.
+- Prefer Hermes Agent for Telegram delivery when connected; keep direct Telegram as fallback.
+- Hermes Agent integration has been requested and is pending interface confirmation.
