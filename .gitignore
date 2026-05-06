@@ -56,6 +56,8 @@ node_modules
 # Outputs
 outputs/
 /scratchpad/
+.cache/
+.worktrees/
 
 # Database files (users will have their own local databases)
 *.db
