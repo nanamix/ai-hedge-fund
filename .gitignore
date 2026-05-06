@@ -23,6 +23,7 @@ wheels/
 # Virtual Environment
 venv/
 ENV/
+uv.lock
 
 # Environment Variables
 .env
