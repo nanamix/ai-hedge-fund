@@ -32,3 +32,44 @@ def test_build_snapshot_from_prices_uses_change_pct():
     by_symbol = snapshot.by_symbol()
     assert by_symbol["SPYM"].price == 83.0
     assert by_symbol["TQQQ"].change_pct == 5.0
+
+
+def test_cli_uses_live_prices_when_not_dry_run(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HERMES_QUEUE_PATH", str(tmp_path / "hermes-alerts"))
+    monkeypatch.setattr(
+        "src.notifications.telegram_flow_check.fetch_yahoo_prices",
+        lambda symbols: type(
+            "Result",
+            (),
+            {
+                "prices": {"SPYM": {"price": 83.0, "change_pct": 0.4, "currency": "USD"}},
+                "warnings": [],
+            },
+        )(),
+    )
+
+    exit_code = main(["--slot", "09:00"])
+
+    assert exit_code == 0
+
+
+def test_cli_live_prices_can_be_used_during_dry_run(capsys, monkeypatch):
+    monkeypatch.setattr(
+        "src.notifications.telegram_flow_check.fetch_yahoo_prices",
+        lambda symbols: type(
+            "Result",
+            (),
+            {
+                "prices": {"SPYM": {"price": 83.0, "change_pct": 0.4, "currency": "USD"}},
+                "warnings": [],
+            },
+        )(),
+    )
+
+    exit_code = main(["--dry-run", "--live-prices", "--slot", "09:00"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "SPYM" in captured.out
+    assert "live price fetch not enabled" not in captured.out

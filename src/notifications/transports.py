@@ -12,6 +12,11 @@ from src.notifications.models import NotificationResult
 
 
 DEFAULT_HERMES_QUEUE_PATH = Path("/Users/hajinyoung/Dev/ai-hedge-fund/.cache/hermes-alerts")
+DEFAULT_HERMES_HOME = Path.home() / ".hermes"
+
+
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 class DryRunTransport:
@@ -42,6 +47,90 @@ class QueueHermesTransport:
         normalized = dict(payload)
         normalized.setdefault("channel", "telegram")
         return self._write_payload(normalized)
+
+
+class DirectHermesTransport:
+    name = "hermes_direct"
+
+    def __init__(
+        self,
+        hermes_home: str | Path | None = None,
+        agent_dir: str | Path | None = None,
+        python_path: str | Path | None = None,
+        target: str = "telegram",
+    ):
+        self.hermes_home = Path(hermes_home or os.getenv("HERMES_HOME", DEFAULT_HERMES_HOME))
+        self.agent_dir = Path(agent_dir or os.getenv("HERMES_AGENT_DIR", self.hermes_home / "hermes-agent"))
+        self.python_path = Path(python_path or os.getenv("HERMES_PYTHON", self.agent_dir / "venv/bin/python"))
+        self.target = os.getenv("HERMES_NOTIFY_TARGET", target)
+
+    def is_available(self) -> bool:
+        return (
+            self.python_path.exists()
+            and os.access(self.python_path, os.X_OK)
+            and (self.agent_dir / "tools/send_message_tool.py").exists()
+        )
+
+    def send(self, message: str) -> NotificationResult:
+        completed = subprocess.run(
+            [
+                str(self.python_path),
+                "-c",
+                _DIRECT_HERMES_SCRIPT,
+                self.target,
+                message,
+            ],
+            cwd=str(self.agent_dir),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=45,
+            env=self._env(),
+        )
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        delivered = completed.returncode == 0 and _stdout_success(completed.stdout)
+        return NotificationResult(transport=self.name, delivered=delivered, detail=detail)
+
+    def _env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        env_path = self.hermes_home / ".env"
+        if env_path.exists():
+            env.update(_read_env_file(env_path))
+        return env
+
+
+_DIRECT_HERMES_SCRIPT = r"""
+import json
+import sys
+
+from tools.send_message_tool import send_message_tool
+
+target = sys.argv[1]
+message = sys.argv[2]
+raw = send_message_tool({"action": "send", "target": target, "message": message})
+print(raw)
+result = json.loads(raw)
+if not result.get("success"):
+    raise SystemExit(1)
+"""
+
+
+def _stdout_success(stdout: str) -> bool:
+    try:
+        return bool(json.loads(stdout.strip()).get("success"))
+    except json.JSONDecodeError:
+        return False
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
 
 
 class CommandHermesTransport:
@@ -105,6 +194,9 @@ def choose_transport(dry_run: bool = False):
         return CommandHermesTransport(command)
     if url := os.getenv("HERMES_NOTIFY_URL"):
         return HttpHermesTransport(url)
+    direct = DirectHermesTransport()
+    if not _truthy(os.getenv("HERMES_DIRECT_DISABLED")) and direct.is_available():
+        return direct
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     if token and chat_id:
