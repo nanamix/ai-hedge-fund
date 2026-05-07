@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from src.notifications.config import load_config
 from src.notifications.formatter import format_flow_message
 from src.notifications.models import AssetSnapshot, FlowSnapshot
+from src.notifications.prices import fetch_yahoo_prices
 from src.notifications.rules import classify_flow
 from src.notifications.state import FlowStateStore
 from src.notifications.transports import choose_transport
@@ -52,15 +53,32 @@ def build_snapshot_from_prices(slot: str, prices: dict[str, dict]) -> FlowSnapsh
     return FlowSnapshot(as_of=now.isoformat(), phase=slot, assets=assets)
 
 
+def build_live_snapshot(slot: str, watchlist: list[str]) -> FlowSnapshot:
+    price_result = fetch_yahoo_prices(watchlist)
+    snapshot = build_snapshot_from_prices(slot, price_result.prices)
+    if price_result.warnings:
+        return FlowSnapshot(
+            as_of=snapshot.as_of,
+            phase=snapshot.phase,
+            assets=snapshot.assets,
+            data_warnings=price_result.warnings,
+        )
+    return snapshot
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Send AI Hedge Fund portfolio flow alert")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--live-prices", action="store_true", help="fetch live prices even during dry-run")
     parser.add_argument("--slot", default="23:30")
     args = parser.parse_args(argv)
 
     load_dotenv()
     config = load_config()
-    snapshot = build_static_snapshot(args.slot)
+    if args.dry_run and not args.live_prices:
+        snapshot = build_static_snapshot(args.slot)
+    else:
+        snapshot = build_live_snapshot(args.slot, config.watchlist)
     result = classify_flow(snapshot)
     message = format_flow_message(snapshot, result)
 
