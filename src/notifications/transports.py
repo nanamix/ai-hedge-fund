@@ -28,12 +28,20 @@ class QueueHermesTransport:
     def __init__(self, queue_path: str | Path):
         self.queue_path = Path(queue_path)
 
-    def send(self, message: str) -> NotificationResult:
+    def _write_payload(self, payload: dict) -> NotificationResult:
         self.queue_path.mkdir(parents=True, exist_ok=True)
         path = self.queue_path / f"ai-hedge-flow-{int(time.time() * 1000)}.json"
-        payload = {"channel": "telegram", "text": message}
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return NotificationResult(transport=self.name, delivered=True, detail=str(path))
+
+    def send(self, message: str) -> NotificationResult:
+        payload = {"channel": "telegram", "text": message}
+        return self._write_payload(payload)
+
+    def send_payload(self, payload: dict) -> NotificationResult:
+        normalized = dict(payload)
+        normalized.setdefault("channel", "telegram")
+        return self._write_payload(normalized)
 
 
 class CommandHermesTransport:

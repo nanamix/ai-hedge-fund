@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from src.notifications.models import FlowSnapshot, RuleResult
 
@@ -19,27 +20,55 @@ def _asset_line(symbol: str, price: float | None, change_pct: float | None, curr
     return f"- {symbol}: {price_text}, {change_text}"
 
 
+def build_flow_payload(snapshot: FlowSnapshot, result: RuleResult) -> dict[str, Any]:
+    major_changes = [
+        _asset_line(asset.symbol, asset.price, asset.change_pct, asset.currency)
+        for asset in snapshot.assets[:8]
+    ]
+    if not major_changes:
+        major_changes = ["- 가격 데이터 없음"]
+
+    slot_label = snapshot.phase if snapshot.phase else "auto"
+    next_check = "다음 체크까지 관망" if slot_label == "auto" else f"다음 체크 슬롯: {slot_label}"
+    body = (
+        f"판단: {result.label}\n"
+        f"기준 시각: {_display_time(snapshot.as_of)}"
+    )
+
+    return {
+        "target": "telegram",
+        "kind": "urgent" if result.urgent else "summary",
+        "title": f"[AI Hedge Fund Flow] {_display_time(snapshot.as_of)}",
+        "summary": result.summary,
+        "body": body,
+        "bullets": major_changes,
+        "risks": result.risk_signals[:5],
+        "actions": [*result.actions[:5], next_check],
+        "decision": result.label,
+        "slot": slot_label,
+        "source": "ai-hedge-fund",
+        "priority": "high" if result.urgent else "normal",
+        "created_at": snapshot.as_of,
+    }
+
+
+
 def format_flow_message(snapshot: FlowSnapshot, result: RuleResult) -> str:
+    payload = build_flow_payload(snapshot, result)
     prefix = "[긴급] " if result.urgent else ""
     lines = [
-        f"{prefix}[AI Hedge Fund Flow] {_display_time(snapshot.as_of)}",
+        f"{prefix}{payload['title']}",
         "",
-        f"요약: {result.summary}",
-        f"판단: {result.label}",
+        f"요약: {payload['summary']}",
+        f"판단: {payload['decision']}",
         "",
         "주요 변화",
     ]
 
-    for asset in snapshot.assets[:8]:
-        lines.append(_asset_line(asset.symbol, asset.price, asset.change_pct, asset.currency))
-
-    if not snapshot.assets:
-        lines.append("- 가격 데이터 없음")
-
+    lines.extend(payload["bullets"])
     lines.extend(["", "리스크 신호"])
-    lines.extend(f"- {signal}" for signal in result.risk_signals[:5])
-
+    lines.extend(f"- {signal}" for signal in payload["risks"])
     lines.extend(["", "오늘 행동"])
-    lines.extend(f"- {action}" for action in result.actions[:5])
+    lines.extend(f"- {action}" for action in payload["actions"][:5])
 
     return "\n".join(lines)

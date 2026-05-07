@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 from src.notifications.config import load_config
-from src.notifications.formatter import format_flow_message
+from src.notifications.formatter import build_flow_payload, format_flow_message
 from src.notifications.models import AssetSnapshot, FlowSnapshot
 from src.notifications.rules import classify_flow
 from src.notifications.state import FlowStateStore
@@ -62,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config()
     snapshot = build_static_snapshot(args.slot)
     result = classify_flow(snapshot)
+    payload = build_flow_payload(snapshot, result)
     message = format_flow_message(snapshot, result)
 
     store = FlowStateStore(config.state_path)
@@ -69,7 +70,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     transport = choose_transport(dry_run=args.dry_run)
-    delivery = transport.send(message)
+    if not args.dry_run and hasattr(transport, "send_payload"):
+        delivery = transport.send_payload(payload)
+    else:
+        delivery = transport.send(message)
     if delivery.delivered:
         if not args.dry_run:
             store.record(args.slot, message)

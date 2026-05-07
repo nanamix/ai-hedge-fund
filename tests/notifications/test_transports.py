@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from src.notifications.transports import DEFAULT_HERMES_QUEUE_PATH, QueueHermesTransport, choose_transport
@@ -36,3 +37,22 @@ def test_queue_hermes_transport_writes_message(tmp_path):
     assert result.transport == "hermes_queue"
     assert len(files) == 1
     assert "hello" in files[0].read_text(encoding="utf-8")
+
+
+def test_queue_hermes_transport_writes_structured_payload(tmp_path):
+    transport = QueueHermesTransport(tmp_path)
+
+    result = transport.send_payload({
+        "kind": "summary",
+        "title": "Flow Summary",
+        "summary": "장중 요약",
+        "actions": ["관망 유지"],
+    })
+
+    files = list(Path(tmp_path).glob("*.json"))
+    assert result.delivered is True
+    assert len(files) == 1
+    payload = json.loads(files[0].read_text(encoding="utf-8"))
+    assert payload["channel"] == "telegram"
+    assert payload["kind"] == "summary"
+    assert payload["actions"] == ["관망 유지"]
