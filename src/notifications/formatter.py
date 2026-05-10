@@ -32,6 +32,7 @@ def build_flow_payload(snapshot: FlowSnapshot, result: RuleResult) -> dict[str, 
         + (f" ({event.note})" if event.note else "")
         for event in snapshot.cash_events
     ]
+    external_opinion_lines = [_external_signal_line(signal) for signal in snapshot.external_signals[:5]]
 
     slot_label = snapshot.phase if snapshot.phase else "auto"
     next_check = "다음 체크까지 관망" if slot_label == "auto" else f"다음 체크 슬롯: {slot_label}"
@@ -48,6 +49,7 @@ def build_flow_payload(snapshot: FlowSnapshot, result: RuleResult) -> dict[str, 
         "body": body,
         "bullets": major_changes,
         "cash_events": cash_lines,
+        "external_opinions": external_opinion_lines,
         "risks": result.risk_signals[:5],
         "actions": [*result.actions[:5], next_check],
         "decision": result.label,
@@ -75,9 +77,18 @@ def format_flow_message(snapshot: FlowSnapshot, result: RuleResult) -> str:
     if payload["cash_events"]:
         lines.extend(["", "입금/현금 이벤트"])
         lines.extend(payload["cash_events"])
+    if payload["external_opinions"]:
+        lines.extend(["", "외부 의견"])
+        lines.extend(payload["external_opinions"])
     lines.extend(["", "리스크 신호"])
     lines.extend(f"- {signal}" for signal in payload["risks"])
     lines.extend(["", "오늘 행동"])
     lines.extend(f"- {action}" for action in payload["actions"][:5])
 
     return "\n".join(lines)
+
+
+def _external_signal_line(signal) -> str:
+    confidence = "n/a" if signal.confidence is None else f"{signal.confidence:.2f}"
+    rationale = f" - {signal.rationale}" if signal.rationale else ""
+    return f"- {signal.source} {signal.symbol}: {signal.action}, confidence {confidence}{rationale}"

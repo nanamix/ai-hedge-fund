@@ -31,12 +31,26 @@ class CashEvent:
 
 
 @dataclass(frozen=True)
+class ExternalSignal:
+    source: str
+    as_of: str
+    symbol: str
+    action: str
+    confidence: float | None
+    horizon: str
+    rationale: str
+    risk_notes: list[str] = field(default_factory=list)
+    raw_action: str = ""
+
+
+@dataclass(frozen=True)
 class FlowSnapshot:
     as_of: str
     phase: str
     assets: list[AssetSnapshot] = field(default_factory=list)
     data_warnings: list[str] = field(default_factory=list)
     cash_events: list[CashEvent] = field(default_factory=list)
+    external_signals: list[ExternalSignal] = field(default_factory=list)
 
     def by_symbol(self) -> dict[str, AssetSnapshot]:
         return {asset.symbol: asset for asset in self.assets}

@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 from src.notifications.config import load_cash_events, load_config
+from src.notifications.external_signals import load_external_signals
 from src.notifications.formatter import build_flow_payload, format_flow_message
 from src.notifications.models import AssetSnapshot, FlowSnapshot
 from src.notifications.prices import fetch_yahoo_prices
@@ -53,7 +54,7 @@ def build_snapshot_from_prices(slot: str, prices: dict[str, dict]) -> FlowSnapsh
     return FlowSnapshot(as_of=now.isoformat(), phase=slot, assets=assets)
 
 
-def build_live_snapshot(slot: str, watchlist: list[str], cash_events=None) -> FlowSnapshot:
+def build_live_snapshot(slot: str, watchlist: list[str], cash_events=None, external_signals=None) -> FlowSnapshot:
     price_result = fetch_yahoo_prices(watchlist)
     snapshot = build_snapshot_from_prices(slot, price_result.prices)
     if price_result.warnings:
@@ -63,12 +64,14 @@ def build_live_snapshot(slot: str, watchlist: list[str], cash_events=None) -> Fl
             assets=snapshot.assets,
             data_warnings=price_result.warnings,
             cash_events=cash_events or [],
+            external_signals=external_signals or [],
         )
     return FlowSnapshot(
         as_of=snapshot.as_of,
         phase=snapshot.phase,
         assets=snapshot.assets,
         cash_events=cash_events or [],
+        external_signals=external_signals or [],
     )
 
 
@@ -82,18 +85,25 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     config = load_config()
     cash_events = load_cash_events(config.cash_events_path)
+    external_signals = load_external_signals(config.external_signals_path)
     if args.dry_run and not args.live_prices:
         snapshot = build_static_snapshot(args.slot)
-        if cash_events:
+        if cash_events or external_signals:
             snapshot = FlowSnapshot(
                 as_of=snapshot.as_of,
                 phase=snapshot.phase,
                 assets=snapshot.assets,
                 data_warnings=snapshot.data_warnings,
                 cash_events=cash_events,
+                external_signals=external_signals,
             )
     else:
-        snapshot = build_live_snapshot(args.slot, config.watchlist, cash_events=cash_events)
+        snapshot = build_live_snapshot(
+            args.slot,
+            config.watchlist,
+            cash_events=cash_events,
+            external_signals=external_signals,
+        )
     result = classify_flow(snapshot)
     payload = build_flow_payload(snapshot, result)
     message = format_flow_message(snapshot, result)

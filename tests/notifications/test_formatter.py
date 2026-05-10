@@ -1,5 +1,5 @@
 from src.notifications.formatter import format_flow_message
-from src.notifications.models import AssetSnapshot, CashEvent, FlowSnapshot, RuleResult
+from src.notifications.models import AssetSnapshot, CashEvent, ExternalSignal, FlowSnapshot, RuleResult
 
 
 def test_format_flow_message_is_concise_and_contains_rules():
@@ -58,3 +58,38 @@ def test_format_flow_message_includes_planned_cash_event():
     assert "입금/현금 이벤트" in message
     assert "Toss Securities" in message
     assert "2,000,000 KRW" in message
+
+
+def test_format_flow_message_includes_external_opinions():
+    snapshot = FlowSnapshot(
+        as_of="2026-05-10T21:30:00+09:00",
+        phase="us_open",
+        assets=[],
+        external_signals=[
+            ExternalSignal(
+                source="HKUDS/AI-Trader",
+                as_of="2026-05-10T21:30:00+09:00",
+                symbol="SPYM",
+                action="review",
+                confidence=0.62,
+                horizon="days",
+                rationale="Core rebuild candidate, not an immediate buy.",
+                risk_notes=["Do not chase after sharp rises."],
+                raw_action="buy",
+            )
+        ],
+    )
+    result = RuleResult(
+        label="대기",
+        summary="큰 변동 신호가 없어 기존 계획을 유지합니다.",
+        risk_signals=["레버리지 재진입 금지 유지"],
+        actions=["신규 매수: 없음"],
+    )
+
+    message = format_flow_message(snapshot, result)
+
+    assert "외부 의견" in message
+    assert "HKUDS/AI-Trader" in message
+    assert "SPYM" in message
+    assert "review" in message
+    assert "Core rebuild candidate" in message

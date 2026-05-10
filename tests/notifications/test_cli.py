@@ -1,4 +1,5 @@
 from src.notifications.telegram_flow_check import build_snapshot_from_prices, main
+import json
 
 
 def test_cli_dry_run_sends_message_to_stdout(capsys):
@@ -73,3 +74,32 @@ def test_cli_live_prices_can_be_used_during_dry_run(capsys, monkeypatch):
     assert exit_code == 0
     assert "SPYM" in captured.out
     assert "live price fetch not enabled" not in captured.out
+
+
+def test_cli_dry_run_includes_external_signals(tmp_path, capsys, monkeypatch):
+    signal_path = tmp_path / "external-signals.json"
+    signal_path.write_text(
+        json.dumps(
+            [
+                {
+                    "source": "HKUDS/AI-Trader",
+                    "as_of": "2026-05-10T21:30:00+09:00",
+                    "symbol": "SPYM",
+                    "raw_action": "buy",
+                    "confidence": 0.62,
+                    "rationale": "Core rebuild candidate",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AI_HEDGE_FLOW_EXTERNAL_SIGNALS_PATH", str(signal_path))
+
+    exit_code = main(["--dry-run", "--slot", "09:00"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "외부 의견" in captured.out
+    assert "HKUDS/AI-Trader" in captured.out
+    assert "review" in captured.out
