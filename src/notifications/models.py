@@ -18,11 +18,25 @@ class AssetSnapshot:
 
 
 @dataclass(frozen=True)
+class CashEvent:
+    date: str
+    broker: str
+    amount: float
+    currency: str
+    status: str
+    note: str = ""
+
+    def display_amount(self) -> str:
+        return f"{self.amount:,.0f} {self.currency}"
+
+
+@dataclass(frozen=True)
 class FlowSnapshot:
     as_of: str
     phase: str
     assets: list[AssetSnapshot] = field(default_factory=list)
     data_warnings: list[str] = field(default_factory=list)
+    cash_events: list[CashEvent] = field(default_factory=list)
 
     def by_symbol(self) -> dict[str, AssetSnapshot]:
         return {asset.symbol: asset for asset in self.assets}

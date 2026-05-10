@@ -12,6 +12,17 @@ def classify_flow(snapshot: FlowSnapshot) -> RuleResult:
     actions: list[str] = []
     urgent = False
 
+    for event in snapshot.cash_events:
+        if event.status == "planned":
+            risk_signals.append(f"{event.broker} {event.date}: {event.display_amount()} 입금 예정")
+            actions.extend(
+                [
+                    "입금 확인 전 신규 매수 금지",
+                    "입금 후 최소 24시간은 대기자금으로 분류",
+                    "원화 대기자금 또는 분할매수 예산으로만 검토",
+                ]
+            )
+
     if snapshot.data_warnings:
         return RuleResult(
             label="보류",
@@ -40,6 +51,14 @@ def classify_flow(snapshot: FlowSnapshot) -> RuleResult:
             risk_signals.append(f"{asset.symbol}: 성장/테마 자산 변동 {change:.2f}%")
 
     if risk_signals:
+        if snapshot.cash_events and not urgent:
+            return RuleResult(
+                label="대기",
+                summary="입금 예정 자금은 대기자금으로 분류하고 즉시 매수하지 않습니다.",
+                risk_signals=risk_signals,
+                actions=actions or ["대기자금: 유지"],
+                urgent=False,
+            )
         return RuleResult(
             label="보류",
             summary="변동성이 커서 계획 없는 신규 매수는 보류합니다.",

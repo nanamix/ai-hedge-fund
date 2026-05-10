@@ -27,6 +27,11 @@ def build_flow_payload(snapshot: FlowSnapshot, result: RuleResult) -> dict[str, 
     ]
     if not major_changes:
         major_changes = ["- 가격 데이터 없음"]
+    cash_lines = [
+        f"- {event.broker}: {event.date}, {event.display_amount()}, {event.status}"
+        + (f" ({event.note})" if event.note else "")
+        for event in snapshot.cash_events
+    ]
 
     slot_label = snapshot.phase if snapshot.phase else "auto"
     next_check = "다음 체크까지 관망" if slot_label == "auto" else f"다음 체크 슬롯: {slot_label}"
@@ -42,6 +47,7 @@ def build_flow_payload(snapshot: FlowSnapshot, result: RuleResult) -> dict[str, 
         "summary": result.summary,
         "body": body,
         "bullets": major_changes,
+        "cash_events": cash_lines,
         "risks": result.risk_signals[:5],
         "actions": [*result.actions[:5], next_check],
         "decision": result.label,
@@ -66,6 +72,9 @@ def format_flow_message(snapshot: FlowSnapshot, result: RuleResult) -> str:
     ]
 
     lines.extend(payload["bullets"])
+    if payload["cash_events"]:
+        lines.extend(["", "입금/현금 이벤트"])
+        lines.extend(payload["cash_events"])
     lines.extend(["", "리스크 신호"])
     lines.extend(f"- {signal}" for signal in payload["risks"])
     lines.extend(["", "오늘 행동"])

@@ -1,5 +1,5 @@
 from src.notifications.formatter import format_flow_message
-from src.notifications.models import AssetSnapshot, FlowSnapshot, RuleResult
+from src.notifications.models import AssetSnapshot, CashEvent, FlowSnapshot, RuleResult
 
 
 def test_format_flow_message_is_concise_and_contains_rules():
@@ -28,3 +28,33 @@ def test_format_flow_message_is_concise_and_contains_rules():
     assert "TQQQ" in message
     assert "레버리지" in message
     assert len(message) < 1200
+
+
+def test_format_flow_message_includes_planned_cash_event():
+    snapshot = FlowSnapshot(
+        as_of="2026-05-10T23:00:00+09:00",
+        phase="pre_deposit",
+        assets=[],
+        cash_events=[
+            CashEvent(
+                date="2026-05-11",
+                broker="Toss Securities",
+                amount=2_000_000,
+                currency="KRW",
+                status="planned",
+                note="추가입금 예정",
+            )
+        ],
+    )
+    result = RuleResult(
+        label="대기",
+        summary="입금 예정 자금은 대기자금으로 분류합니다.",
+        risk_signals=["Toss Securities 2026-05-11: 2,000,000 KRW 입금 예정"],
+        actions=["입금 확인 전 신규 매수 금지"],
+    )
+
+    message = format_flow_message(snapshot, result)
+
+    assert "입금/현금 이벤트" in message
+    assert "Toss Securities" in message
+    assert "2,000,000 KRW" in message

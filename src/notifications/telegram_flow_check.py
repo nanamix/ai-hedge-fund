@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
-from src.notifications.config import load_config
+from src.notifications.config import load_cash_events, load_config
 from src.notifications.formatter import build_flow_payload, format_flow_message
 from src.notifications.models import AssetSnapshot, FlowSnapshot
 from src.notifications.prices import fetch_yahoo_prices
@@ -53,7 +53,7 @@ def build_snapshot_from_prices(slot: str, prices: dict[str, dict]) -> FlowSnapsh
     return FlowSnapshot(as_of=now.isoformat(), phase=slot, assets=assets)
 
 
-def build_live_snapshot(slot: str, watchlist: list[str]) -> FlowSnapshot:
+def build_live_snapshot(slot: str, watchlist: list[str], cash_events=None) -> FlowSnapshot:
     price_result = fetch_yahoo_prices(watchlist)
     snapshot = build_snapshot_from_prices(slot, price_result.prices)
     if price_result.warnings:
@@ -62,8 +62,14 @@ def build_live_snapshot(slot: str, watchlist: list[str]) -> FlowSnapshot:
             phase=snapshot.phase,
             assets=snapshot.assets,
             data_warnings=price_result.warnings,
+            cash_events=cash_events or [],
         )
-    return snapshot
+    return FlowSnapshot(
+        as_of=snapshot.as_of,
+        phase=snapshot.phase,
+        assets=snapshot.assets,
+        cash_events=cash_events or [],
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -75,10 +81,19 @@ def main(argv: list[str] | None = None) -> int:
 
     load_dotenv()
     config = load_config()
+    cash_events = load_cash_events(config.cash_events_path)
     if args.dry_run and not args.live_prices:
         snapshot = build_static_snapshot(args.slot)
+        if cash_events:
+            snapshot = FlowSnapshot(
+                as_of=snapshot.as_of,
+                phase=snapshot.phase,
+                assets=snapshot.assets,
+                data_warnings=snapshot.data_warnings,
+                cash_events=cash_events,
+            )
     else:
-        snapshot = build_live_snapshot(args.slot, config.watchlist)
+        snapshot = build_live_snapshot(args.slot, config.watchlist, cash_events=cash_events)
     result = classify_flow(snapshot)
     payload = build_flow_payload(snapshot, result)
     message = format_flow_message(snapshot, result)
